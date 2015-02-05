@@ -32,36 +32,41 @@ private abstract class BaseRRDD[T: ClassTag, U: ClassTag](
     val pb = rWorkerProcessBuilder()
     val proc = pb.start()
 
-    startStderrThread(proc)
+    val errThread = startStderrThread(proc)
 
     val tempFile = startStdinThread(proc, parentIterator, split.index)
 
     // Return an iterator that read lines from the process's stdout
     val inputStream = new BufferedReader(new InputStreamReader(proc.getInputStream))
-    val stdOutFileName = inputStream.readLine().trim()
 
-    val dataStream = openDataStream(stdOutFileName)
+    try {
+      val stdOutFileName = inputStream.readLine().trim()
+      val dataStream = openDataStream(stdOutFileName)
 
-    return new Iterator[U] {
-      def next(): U = {
-        val obj = _nextObj
-        if (hasNext) {
-          _nextObj = read()
+      return new Iterator[U] {
+        def next(): U = {
+          val obj = _nextObj
+          if (hasNext) {
+            _nextObj = read()
+          }
+          obj
         }
-        obj
-      }
 
-      var _nextObj = read()
+        var _nextObj = read()
 
-      def hasNext(): Boolean = {
-        val hasMore = (_nextObj != null)
-        if (!hasMore) {
-          // Delete the temporary file we created as we are done reading it
-          dataStream.close()
-          tempFile.delete()
+        def hasNext(): Boolean = {
+          val hasMore = (_nextObj != null)
+          if (!hasMore) {
+            // Delete the temporary file we created as we are done reading it
+            dataStream.close()
+            tempFile.delete()
+          }
+          hasMore
         }
-        hasMore
       }
+    } catch {
+      case e: Exception =>
+        throw new SparkException("R computation failed with\n " + errThread.getLines())
     }
   }
 
@@ -84,14 +89,12 @@ private abstract class BaseRRDD[T: ClassTag, U: ClassTag](
   /**
    * Start a thread to print the process's stderr to ours
    */
-  private def startStderrThread(proc: Process) {
-    new Thread("stderr reader for R") {
-      override def run() {
-        for (line <- Source.fromInputStream(proc.getErrorStream).getLines) {
-          System.err.println(line)
-        }
-      }
-    }.start()
+  private def startStderrThread(proc: Process): BufferedStreamThread = {
+    val ERR_BUFFER_SIZE = 100
+    val errThread = new BufferedStreamThread(proc.getErrorStream, "stderr reader for R",
+      ERR_BUFFER_SIZE)
+    errThread.start()
+    errThread
   }
 
   /**
@@ -114,68 +117,77 @@ private abstract class BaseRRDD[T: ClassTag, U: ClassTag](
     // Start a thread to feed the process input from our parent's iterator
     new Thread("stdin writer for R") {
       override def run() {
-        SparkEnv.set(env)
-        val streamStd = new BufferedOutputStream(proc.getOutputStream, bufferSize)
-        val printOutStd = new PrintStream(streamStd)
-        printOutStd.println(tempFileName)
-        printOutStd.println(rLibDir)
-        printOutStd.println(tempFileIn.getAbsolutePath())
-        printOutStd.flush()
+        try {
+          SparkEnv.set(env)
+          val stream = new BufferedOutputStream(new FileOutputStream(tempFileIn), bufferSize)
+          val printOut = new PrintStream(stream)
+          val dataOut = new DataOutputStream(stream)
 
-        streamStd.close()
+          dataOut.writeInt(splitIndex)
 
-        val stream = new BufferedOutputStream(new FileOutputStream(tempFileIn), bufferSize)
-        val printOut = new PrintStream(stream)
-        val dataOut = new DataOutputStream(stream)
+          dataOut.writeInt(func.length)
+          dataOut.write(func, 0, func.length)
 
-        dataOut.writeInt(splitIndex)
+          // R worker process input serialization flag
+          dataOut.writeInt(if (parentSerialized) 1 else 0)
+          // R worker process output serialization flag
+          dataOut.writeInt(if (dataSerialized) 1 else 0)
 
-        dataOut.writeInt(func.length)
-        dataOut.write(func, 0, func.length)
+          dataOut.writeInt(packageNames.length)
+          dataOut.write(packageNames, 0, packageNames.length)
 
-        // R worker process input serialization flag
-        dataOut.writeInt(if (parentSerialized) 1 else 0)
-        // R worker process output serialization flag
-        dataOut.writeInt(if (dataSerialized) 1 else 0)
+          dataOut.writeInt(functionDependencies.length)
+          dataOut.write(functionDependencies, 0, functionDependencies.length)
 
-        dataOut.writeInt(packageNames.length)
-        dataOut.write(packageNames, 0, packageNames.length)
-
-        dataOut.writeInt(functionDependencies.length)
-        dataOut.write(functionDependencies, 0, functionDependencies.length)
-
-        dataOut.writeInt(broadcastVars.length)
-        broadcastVars.foreach { broadcast =>
-          // TODO(shivaram): Read a Long in R to avoid this cast
-          dataOut.writeInt(broadcast.id.toInt)
-          // TODO: Pass a byte array from R to avoid this cast ?
-          val broadcastByteArr = broadcast.value.asInstanceOf[Array[Byte]]
-          dataOut.writeInt(broadcastByteArr.length)
-          dataOut.write(broadcastByteArr, 0, broadcastByteArr.length)
-        }
-
-        dataOut.writeInt(numPartitions)
-
-        if (!iter.hasNext) {
-          dataOut.writeInt(0)
-        } else {
-          dataOut.writeInt(1)
-        }
-
-        for (elem <- iter) {
-          if (parentSerialized) {
-            val elemArr = elem.asInstanceOf[Array[Byte]]
-            dataOut.writeInt(elemArr.length)
-            dataOut.write(elemArr, 0, elemArr.length)
-          } else {
-            printOut.println(elem)
+          dataOut.writeInt(broadcastVars.length)
+          broadcastVars.foreach { broadcast =>
+            // TODO(shivaram): Read a Long in R to avoid this cast
+            dataOut.writeInt(broadcast.id.toInt)
+            // TODO: Pass a byte array from R to avoid this cast ?
+            val broadcastByteArr = broadcast.value.asInstanceOf[Array[Byte]]
+            dataOut.writeInt(broadcastByteArr.length)
+            dataOut.write(broadcastByteArr, 0, broadcastByteArr.length)
           }
-        }
 
-        printOut.flush()
-        dataOut.flush()
-        stream.flush()
-        stream.close()
+          dataOut.writeInt(numPartitions)
+
+          if (!iter.hasNext) {
+            dataOut.writeInt(0)
+          } else {
+            dataOut.writeInt(1)
+          }
+
+          for (elem <- iter) {
+            if (parentSerialized) {
+              val elemArr = elem.asInstanceOf[Array[Byte]]
+              dataOut.writeInt(elemArr.length)
+              dataOut.write(elemArr, 0, elemArr.length)
+            } else {
+              printOut.println(elem)
+            }
+          }
+
+          printOut.flush()
+          dataOut.flush()
+          stream.flush()
+          stream.close()
+
+          // NOTE: We need to write out the temp file before writing out the 
+          // file name to stdin. Otherwise the R process could read partial state
+          val streamStd = new BufferedOutputStream(proc.getOutputStream, bufferSize)
+          val printOutStd = new PrintStream(streamStd)
+          printOutStd.println(tempFileName)
+          printOutStd.println(rLibDir)
+          printOutStd.println(tempFileIn.getAbsolutePath())
+          printOutStd.flush()
+
+          streamStd.close()
+        } catch {
+          // TODO: We should propogate this error to the task thread
+          case e: Exception =>
+            System.err.println("R Writer thread got an exception " + e)
+            e.printStackTrace()
+        }
       }
     }.start()
 
@@ -198,10 +210,10 @@ private class PairwiseRRDD[T: ClassTag](
     functionDependencies: Array[Byte],
     packageNames: Array[Byte],
     rLibDir: String,
-    broadcastVars: Array[Broadcast[Object]])
+    broadcastVars: Array[Object])
   extends BaseRRDD[T, (Int, Array[Byte])](parent, numPartitions, hashFunc, parentSerialized,
                                           true, functionDependencies, packageNames, rLibDir,
-                                          broadcastVars) {
+                                          broadcastVars.map(x => x.asInstanceOf[Broadcast[Object]])) {
 
   private var dataStream: DataInputStream = _
   
@@ -243,10 +255,10 @@ private class RRDD[T: ClassTag](
     functionDependencies: Array[Byte],
     packageNames: Array[Byte],
     rLibDir: String,
-    broadcastVars: Array[Broadcast[Object]])
+    broadcastVars: Array[Object])
   extends BaseRRDD[T, Array[Byte]](parent, -1, func, parentSerialized,
                                 true, functionDependencies, packageNames, rLibDir,
-                                broadcastVars) {
+                                broadcastVars.map(x => x.asInstanceOf[Broadcast[Object]])) {
 
   private var dataStream: DataInputStream = _
   
@@ -286,10 +298,10 @@ private class StringRRDD[T: ClassTag](
     functionDependencies: Array[Byte],
     packageNames: Array[Byte],
     rLibDir: String,
-    broadcastVars: Array[Broadcast[Object]])
+    broadcastVars: Array[Object])
   extends BaseRRDD[T, String](parent, -1, func, parentSerialized,
                            false, functionDependencies, packageNames, rLibDir,
-                           broadcastVars) {
+                           broadcastVars.map(x => x.asInstanceOf[Broadcast[Object]])) {
 
   private var dataStream: BufferedReader = _
 
@@ -310,6 +322,29 @@ private class StringRRDD[T: ClassTag](
   }
 
   lazy val asJavaRDD : JavaRDD[String] = JavaRDD.fromRDD(this)
+}
+
+private class BufferedStreamThread(
+    in: InputStream,
+    name: String,
+    errBufferSize: Int) extends Thread(name) {
+  val lines = new Array[String](errBufferSize)
+  var lineIdx = 0
+  override def run() {
+    for (line <- Source.fromInputStream(in).getLines) {
+      lines(lineIdx) = line
+      lineIdx = (lineIdx + 1) % errBufferSize
+      System.err.println(line)
+    }
+  }
+
+  def getLines(): String = {
+    (0 until errBufferSize).filter { x =>
+      lines((x + lineIdx) % errBufferSize) != null
+    }.map { x =>
+      lines((x + lineIdx) % errBufferSize)
+    }.mkString("\n")
+  }
 }
 
 object RRDD {

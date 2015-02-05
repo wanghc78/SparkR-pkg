@@ -1,12 +1,12 @@
 #exportPattern("^[[:alpha:]]+")
 exportClasses("RDD")
-exportClasses("PipelinedRDD")
 exportClasses("Broadcast")
 exportMethods(
               "cache",
               "checkpoint",
               "cogroup",
               "collect",
+              "collectAsMap",
               "collectPartition",
               "combineByKey",
               "count",
@@ -19,6 +19,7 @@ exportMethods(
               "flatMapValues",
               "foreach",
               "foreachPartition",
+              "fullOuterJoin",
               "groupByKey",
               "join",
               "keyBy",
@@ -64,4 +65,6 @@ export(
        "setCheckpointDir"
       )
 export("sparkR.init")
+export("print.jobj")
 useDynLib(SparkR, stringHashCode)
+importFrom(methods, setGeneric, setMethod, setOldClass)
