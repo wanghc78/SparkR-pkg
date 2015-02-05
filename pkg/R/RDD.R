@@ -173,7 +173,10 @@ setValidity("RDD",
 #' rdd <- parallelize(sc, 1:10, 2L)
 #' cache(rdd)
 #'}
-setGeneric("cache", function(rdd) { standardGeneric("cache") })
+setGeneric("cache", function(rdd) { 
+            #standardGeneric("cache")
+            rdd
+        })
 
 #' @rdname cache-methods
 #' @aliases cache,RDD-method
@@ -591,7 +594,9 @@ setMethod("flatMap",
 #' collect(partitionSum) # 15, 40
 #'}
 setGeneric("lapplyPartition", function(X, FUN) {
-           standardGeneric("lapplyPartition") })
+           #standardGeneric("lapplyPartition")
+           FUN(X)
+         })
 
 #' @rdname lapplyPartition
 #' @aliases lapplyPartition,RDD,function-method
