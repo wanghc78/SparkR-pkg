@@ -35,16 +35,15 @@ run <- function(data) {
         clusterSizesVec <- sapply(cluster_sizes, "[[", 2) #unsorted
         clusterSizesVec <- clusterSizesVec[order(sapply(cluster_sizes, "[[", 1))]
         
-        centers <- lapply(reduced_centers, function(unnorm_ctr){
-                    unnorm_ctr[[2]] / clusterSizesVec[unnorm_ctr[[1]]]
-                })
+        norm_center_fun <- function(unnorm_ctr){
+            unnorm_ctr[[2]] / clusterSizesVec[unnorm_ctr[[1]]]
+        }
+        centers <- lapply(reduced_centers, norm_center_fun)
     }
     #calculate the distance to the 10 centers
     
     cat("Centers:\n")
     print(centers);
-    cat("clusterSizes:\n")
-    print(clusterSizes);
 }
 
 if (!exists('harness_argc')) {

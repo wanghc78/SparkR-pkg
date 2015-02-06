@@ -51,7 +51,10 @@ run <- function(data) {
     
     #get the cl
     test_cl <- countByKey(list_test)
-    lapply(test_cl, function(item){ cat(item[[1]], ':', item[[2]], '\n') })
+    for(i in 1:length(test_cl)) {
+        item <- test_cl[[i]]
+        cat(item[[1]], ':', item[[2]], '\n') 
+    }
     cat("End of k-NN\n")
 }
 

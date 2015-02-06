@@ -51,13 +51,16 @@ run <- function(data) {
     list_test <- lapply(list_test, kNN.fun)
     
     #get the cl
-    locallapply <- lapply
     test_cl <- countByKey(list_test)
-    locallapply(test_cl, function(item){ cat(item[[1]], ':', item[[2]], '\n') })
+    for(i in 1:length(test_cl)) {
+        item <- test_cl[[i]]
+        cat(item[[1]], ':', item[[2]], '\n') 
+    }
     cat("End of k-NN\n")
 }
 
 run <- va_cmpfun(run)
+print(run)
 
 
 if (!exists('harness_argc')) {
