@@ -172,17 +172,18 @@ setValidity("RDD",
 #'}
 #' @rdname cache-methods
 #' @aliases cache,RDD-method
-setGeneric("cache", function(rdd) { 
-            #standardGeneric("cache")
-            rdd
-        })
-
 setMethod("cache",
           signature(x = "RDD"),
           function(x) {
             callJMethod(getJRDD(x), "cache")
             x@env$isCached <- TRUE
             x
+          })
+
+setMethod("cache",
+          signature(x = "ANY"),
+          function(rdd) { 
+              rdd
           })
 
 #' Persist an RDD
@@ -501,15 +502,16 @@ setMethod("flatMap",
 #'}
 #' @rdname lapplyPartition
 #' @aliases lapplyPartition,RDD,function-method
-setGeneric("lapplyPartition", function(X, FUN) {
-           #standardGeneric("lapplyPartition")
-           FUN(X)
-         })
-
 setMethod("lapplyPartition",
           signature(X = "RDD", FUN = "function"),
           function(X, FUN) {
             lapplyPartitionsWithIndex(X, function(s, part) { FUN(part) })
+          })
+  
+setMethod("lapplyPartition",
+          signature(X = "ANY", FUN = "function"),
+          function(X, FUN) {
+              FUN(X)
           })
 
 #' mapPartitions is the same as lapplyPartition.
