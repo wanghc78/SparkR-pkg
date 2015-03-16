@@ -43,8 +43,8 @@ run <- function(data) {
         gwx <- tanh(alpha * wx)
         alpha * (1 - gwx^2)
     }
+    ptm <- proc.time() #previous iteration's time
     for(iter in 1:niter) {
-        cat('Iter =', iter, '\n')
         GWX <- lapply(X1, gwx.fun)
         v1 <- reduce(GWX, '+') / n
         G.WX <- lapply(X1, g.wx.fun)
@@ -53,6 +53,9 @@ run <- function(data) {
         sW1 <- La.svd(W1)
         W1 <- sW1$u %*% diag(1/sW1$d) %*% t(sW1$u) %*% W1
         W <- W1
+        ctm <- proc.time()
+        cat("[INFO]Iter", iter, "Time =", (ctm - ptm)[[3]], '\n')
+        ptm <- ctm
     }
     #final turn back
     w <- W %*% K

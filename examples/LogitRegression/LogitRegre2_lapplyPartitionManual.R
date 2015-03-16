@@ -31,9 +31,13 @@ run <- function(data) {
                                     })
                    )
                    
+    ptm <- proc.time() #previous iteration's time
     for(iter in 1:niter) {
-        cat("On iteration ", iter, "\n")
         w <- w - reduce(lapplyPartition(points, gradient), "+")
+        ctm <- proc.time()
+        cat("[INFO]Iter", iter, "Time =", (ctm - ptm)[[3]], '\n')
+        ptm <- ctm
+        cat("w = ", w, "\n")
     }
     cat("Final w: ", w, "\n")
 }

@@ -2,7 +2,6 @@ app.name <- "LinearRegression_lapply"
 source("setup_lr.R")
 
 
-
 run <- function(data) {
     grad.func <- function(yx) {
         y <- yx[1]
@@ -20,10 +19,15 @@ run <- function(data) {
     theta <- double(ndim+1) #initial guess as 0
     alpha <- 0.05 / length(YX) / ndim # a small step
     
+    
+    ptm <- proc.time() #previous iteration's time
     for(iter in 1:niter) {
         delta <- lapply(YX, grad.func)
         #cat('delta =', delta, '\n')
         theta <- theta - alpha * reduce(delta, '+')
+        ctm <- proc.time()
+        cat("[INFO]Iter", iter, "Time =", (ctm - ptm)[[3]], '\n')
+        ptm <- ctm
         cat('theta =', theta, '\n')
         #print(cost(X,y, theta))
     }

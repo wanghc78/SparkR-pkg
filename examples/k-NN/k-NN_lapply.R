@@ -47,6 +47,7 @@ run <- function(data) {
         test_item
     }
     
+    ptm <- proc.time() #previous iteration's time
     list_test <- lapply(list_test, kNN.fun)
     
     #get the cl
@@ -55,6 +56,7 @@ run <- function(data) {
         item <- test_cl[[i]]
         cat(item[[1]], ':', item[[2]], '\n') 
     }
+    cat("[INFO]Time =", (proc.time()-ptm)[[3]], '\n')
     cat("End of k-NN\n")
 }
 

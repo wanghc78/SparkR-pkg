@@ -18,18 +18,19 @@ run <- function(data) {
     centers <- lapply(takeSample(list_data, FALSE, clusters, 255L), 
             function(labelcenter){labelcenter[[2]]})
     #pick clusters as default centers
-    for(i in 1:niter) {
-        cat("Iteration", i, '...\n')
-        #map each item into distance to 10 centers.
-        map_fun <- function(ptr){
-            dist.inner.func <- function(center){
-                sum((ptr[[2]]-center)^2) #the loc is in ptr[[2]]
-            }
-            ctr_dists <- lapply(centers, dist.inner.func)
-            ptr[[1]] <- which.min(ctr_dists) #reset the key
-            ptr
+
+    #map each item into distance to 10 centers.
+    map_fun <- function(ptr){
+        dist.inner.func <- function(center){
+            sum((ptr[[2]]-center)^2) #the loc is in ptr[[2]]
         }
-        
+        ctr_dists <- lapply(centers, dist.inner.func)
+        ptr[[1]] <- which.min(ctr_dists) #reset the key
+        ptr
+    }
+    
+    ptm <- proc.time() #previous iteration's time
+    for(iter in 1:niter) {
         list_data <- lapply(list_data, map_fun)
         cluster_sizes <- countByKey(list_data)
         reduced_centers <- collect(reduceByKey(list_data, "+", clusters))
@@ -41,6 +42,9 @@ run <- function(data) {
             unnorm_ctr[[2]] / clusterSizesVec[unnorm_ctr[[1]]]
         }
         centers <- lapply(reduced_centers, norm_center_fun)
+        ctm <- proc.time()
+        cat("[INFO]Iter", iter, "Time =", (ctm - ptm)[[3]], '\n')
+        ptm <- ctm
     }
     #calculate the distance to the 10 centers
     

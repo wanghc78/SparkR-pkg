@@ -27,10 +27,10 @@ setup <- function(args=c('local', '24', '1000000', '10', '50')) {
     niter<-as.integer(args[5])
     if(is.na(niter)){ niter <- 50L }
     
-    cat('[', app.name, ' on ', master, '] slices=', slices, ', n=', n, ', ndim=', ndim, ', niters=', niter, '\n')
+    cat('[INFO][', app.name, ' on ', master, '] slices=', slices, ', n=', n, ', ndim=', ndim, ', niters=', niter, '\n')
     
     # Initialize Spark context
-    sc <- sparkR.init(master=master, sparkEnvir=list(spark.executor.memory="2g"), app.name)
+    sc <- sparkR.init(master=master, sparkEnvir=list(spark.executor.memory="8g"), app.name)
     rdd <- parallelize(sc, 1:n, slices)
     
     YX <- lapplyPartition(rdd, function(elems){

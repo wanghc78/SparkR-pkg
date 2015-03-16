@@ -28,11 +28,11 @@ setup <- function(args=c('local', '24', '1000000', '2', '25')) {
     niter<-as.integer(args[5])
     if(is.na(niter)){ niter <- 25L }
     
-    cat('[', app.name, ' on ', master, '] slices =', slices, ', n=', n, ', nvar=', nvar, ', niter=', niter, '\n')
+    cat('[INFO][', app.name, ' on ', master, '] slices =', slices, ', n=', n, ', nvar=', nvar, ', niter=', niter, '\n')
     
     #generate pre-centered data. Note the data shape is n x nvar
     # Initialize Spark context
-    sc <- sparkR.init(master=master, sparkEnvir=list(spark.executor.memory="2g"), app.name)
+    sc <- sparkR.init(master=master, sparkEnvir=list(spark.executor.memory="8g"), app.name, sparkRBackendPort=12346)
     rdd <- parallelize(sc, 1:n, slices)
     
     A <- matrix(c(1, 1, -1, 3), 2, 2)

@@ -30,10 +30,10 @@ setup <- function(args=c('local', '24', '10000', '10000', '10', '5')) {
     k<-as.integer(args[6])
     if(is.na(k)){ k <- 5L }    
     
-    cat('[', app.name, ' on ', master, '] slices=', slices, ', train_n=', train_n, ', test_n=', test_n, ', clusters=', clusters, ', k=', k, '\n', sep='')
+    cat('[INFO][', app.name, ' on ', master, '] slices=', slices, ', train_n=', train_n, ', test_n=', test_n, ', clusters=', clusters, ', k=', k, '\n', sep='')
     
     # Initialize Spark context
-    sc <- sparkR.init(master=master, sparkEnvir=list(spark.executor.memory="4g"), app.name)
+    sc <- sparkR.init(master=master, sparkEnvir=list(spark.executor.memory="8g"), app.name, sparkRBackendPort=12346)
 
     #generate training
 #    list_train_set <- lapplyPartition(parallelize(sc, 1:train_n, slices), function(elems){

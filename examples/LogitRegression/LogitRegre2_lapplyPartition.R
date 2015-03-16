@@ -37,7 +37,9 @@ run <- function(data) {
                                         function(vData){list(colSums(vData))}
                                         ),
                        "+")
-        cat("On iteration ", iter, "w = ", w, "\n")
+        cat("[INFO]Iter", iter, "Time =", (ctm - ptm)[[3]], '\n')
+        ptm <- ctm
+        cat("w = ", w, "\n")
     }
     cat("Final w: ", w, "\n")
 }

@@ -24,7 +24,7 @@ setup <- function(args=c('local', '24', '1000000', '3', '10', '15')) {
     if(is.na(n)){ n <- 1000000L }
     
     ndim <-as.integer(args[4])
-    if(is.na(n)){ ndim <- 3L }
+    if(is.na(ndim)){ ndim <- 3L }
     
     clusters<-as.integer(args[5])
     if(is.na(clusters)){ clusters <- 10L }
@@ -32,10 +32,10 @@ setup <- function(args=c('local', '24', '1000000', '3', '10', '15')) {
     niter<-as.integer(args[6])
     if(is.na(niter)){ niter <- 15L }
     
-    cat('[', app.name, ' on ', master, '] slices=', slices, ', n=', n, ', ndim=', ndim, ', clusters=', clusters, ', niter=', niter, '\n', sep='')
+    cat('[INFO][', app.name, ' on ', master, '] slices=', slices, ', n=', n, ', ndim=', ndim, ', clusters=', clusters, ', niter=', niter, '\n', sep='')
     
     # Initialize Spark context
-    sc <- sparkR.init(master=master, sparkEnvir=list(spark.executor.memory="4g"), app.name)
+    sc <- sparkR.init(master=master, sparkEnvir=list(spark.executor.memory="8g"), app.name)
     rdd <- parallelize(sc, 1:n, slices)
     
     list_data <- lapplyPartition(rdd, function(elems){

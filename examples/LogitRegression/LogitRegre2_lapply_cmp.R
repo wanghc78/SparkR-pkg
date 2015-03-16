@@ -24,9 +24,13 @@ run <- function(data) {
     w <- double(ndim) #runif(n=ndim, min = -1, max = 1)
     cat("Initial w: ", w, "\n")
     
+    ptm <- proc.time() #previous iteration's time
     for(iter in 1:niter) {
         w <- w - reduce(lapply(YX, grad.func), "+")
-        cat("On iteration ", iter, "w = ", w, "\n")
+        ctm <- proc.time()
+        cat("[INFO]Iter", iter, "Time =", (ctm - ptm)[[3]], '\n')
+        ptm <- ctm
+        cat("w = ", w, "\n")
     }
     cat("Final w: ", w, "\n")
 }
