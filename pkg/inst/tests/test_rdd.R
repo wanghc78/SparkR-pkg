@@ -86,7 +86,10 @@ test_that("several transformations on RDD (a benchmark on PipelinedRDD)", {
                 part <- as.list(unlist(part) * split + i)
               })
   rdd2 <- lapply(rdd2, function(x) x + x)
-  collect(rdd2)
+  actual <- collect(rdd2)
+  expected <- list(24, 24, 24, 24, 24, 
+                   168, 170, 172, 174, 176)
+  expect_equal(actual, expected)
 })
 
 test_that("PipelinedRDD support actions: cache(), persist(), unpersist(), checkpoint()", {
@@ -267,6 +270,27 @@ test_that("keyBy on RDDs", {
   expect_equal(actual, lapply(nums, function(x) { list(func(x), x) }))
 })
 
+test_that("repartition/coalesce on RDDs", {
+  rdd <- parallelize(sc, 1:20, 4L) # each partition contains 5 elements
+
+  # repartition
+  r1 <- repartition(rdd, 2)
+  expect_equal(numPartitions(r1), 2L)
+  count <- length(collectPartition(r1, 0L))
+  expect_true(count >= 8 && count <= 12)
+
+  r2 <- repartition(rdd, 6)
+  expect_equal(numPartitions(r2), 6L)
+  count <- length(collectPartition(r2, 0L))
+  expect_true(count >=0 && count <= 4)
+
+  # coalesce
+  r3 <- coalesce(rdd, 1)
+  expect_equal(numPartitions(r3), 1L)
+  count <- length(collectPartition(r3, 0L))
+  expect_equal(count, 20)
+})
+
 test_that("sortBy() on RDDs", {
   sortedRdd <- sortBy(rdd, function(x) { x * x }, ascending = FALSE)
   actual <- collect(sortedRdd)
@@ -324,6 +348,34 @@ test_that("aggregateRDD() on RDDs", {
   expect_equal(actual, list(0, 0))
 })
 
+test_that("zipWithUniqueId() on RDDs", {
+  rdd <- parallelize(sc, list("a", "b", "c", "d", "e"), 3L)
+  actual <- collect(zipWithUniqueId(rdd))
+  expected <- list(list("a", 0), list("b", 3), list("c", 1), 
+                   list("d", 4), list("e", 2))
+  expect_equal(actual, expected)
+  
+  rdd <- parallelize(sc, list("a", "b", "c", "d", "e"), 1L)
+  actual <- collect(zipWithUniqueId(rdd))
+  expected <- list(list("a", 0), list("b", 1), list("c", 2), 
+                   list("d", 3), list("e", 4))
+  expect_equal(actual, expected)
+})
+
+test_that("zipWithIndex() on RDDs", {
+  rdd <- parallelize(sc, list("a", "b", "c", "d", "e"), 3L)
+  actual <- collect(zipWithIndex(rdd))
+  expected <- list(list("a", 0), list("b", 1), list("c", 2), 
+                   list("d", 3), list("e", 4))
+  expect_equal(actual, expected)
+  
+  rdd <- parallelize(sc, list("a", "b", "c", "d", "e"), 1L)
+  actual <- collect(zipWithIndex(rdd))
+  expected <- list(list("a", 0), list("b", 1), list("c", 2), 
+                   list("d", 3), list("e", 4))
+  expect_equal(actual, expected)
+})
+
 test_that("keys() on RDDs", {
   keys <- keys(intRdd)
   actual <- collect(keys)
@@ -334,6 +386,23 @@ test_that("values() on RDDs", {
   values <- values(intRdd)
   actual <- collect(values)
   expect_equal(actual, lapply(intPairs, function(x) { x[[2]] }))
+})
+
+test_that("pipeRDD() on RDDs", {
+  actual <- collect(pipeRDD(rdd, "more"))
+  expected <- as.list(as.character(1:10))
+  expect_equal(actual, expected)
+  
+  trailed.rdd <- parallelize(sc, c("1", "", "2\n", "3\n\r\n"))
+  actual <- collect(pipeRDD(trailed.rdd, "sort"))
+  expected <- list("", "1", "2", "3")
+  expect_equal(actual, expected)
+  
+  rev.nums <- 9:0
+  rev.rdd <- parallelize(sc, rev.nums, 2L)
+  actual <- collect(pipeRDD(rev.rdd, "sort"))
+  expected <- as.list(as.character(c(5:9, 0:4)))
+  expect_equal(actual, expected)
 })
 
 test_that("join() on pairwise RDDs", {

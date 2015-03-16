@@ -4,7 +4,6 @@ assemblyJarName <- "sparkr-assembly-0.1.jar"
 
 sparkR.onLoad <- function(libname, pkgname) {
   assemblyJarPath <- paste(libname, "/SparkR/", assemblyJarName, sep = "")
-  assemblyJarPath <- gsub(" ", "\\ ", assemblyJarPath, fixed = T)
   packageStartupMessage("[SparkR] Initializing with classpath ", assemblyJarPath, "\n")
  
   .sparkREnv$libname <- libname
@@ -25,19 +24,6 @@ connExists <- function(env) {
 # Also terminates the backend this R session is connected to
 sparkR.stop <- function(env = .sparkREnv) {
 
-  if (!connExists(env)) {
-    # When the workspace is saved in R, the connections are closed
-    # *before* the finalizer is run. In these cases, we reconnect
-    # to the backend, so we can shut it down.
-    tryCatch({
-      connectBackend("localhost", .sparkREnv$sparkRBackendPort)
-    }, error = function(err) {
-      cat("Error in Connection: Use sparkR.init() to restart SparkR\n")
-    }, warning = function(war) {
-      cat("No Connection Found: Use sparkR.init() to restart SparkR\n")
-    })
-  } 
-
   if (exists(".sparkRCon", envir = env)) {
     cat("Stopping SparkR\n")
     if (exists(".sparkRjsc", envir = env)) {
@@ -48,14 +34,25 @@ sparkR.stop <- function(env = .sparkREnv) {
   
     callJStatic("SparkRHandler", "stopBackend")
     # Also close the connection and remove it from our env
-    conn <- get(".sparkRCon", env)
+    conn <- get(".sparkRCon", envir = env)
     close(conn)
+
     rm(".sparkRCon", envir = env)
-    # Finally, sleep for 1 sec to let backend finish exiting.
-    # Without this we get port conflicts in RStudio when we try to 'Restart R'.
-    Sys.sleep(1)
+    rm(".scStartTime", envir = env)
   }
-  
+
+  if (exists(".monitorConn", envir = env)) {
+    conn <- get(".monitorConn", envir = env)
+    close(conn)
+    rm(".monitorConn", envir = env)
+  }
+
+  # Clear all broadcast variables we have
+  # as the jobj will not be valid if we restart the JVM
+  clearBroadcastVariables()
+
+  # Clear jobj maps
+  clearJobjs()
 }
 
 #' Initialize a new Spark Context.
@@ -83,14 +80,13 @@ sparkR.stop <- function(env = .sparkREnv) {
 #'}
 
 sparkR.init <- function(
-  master = "local",
+  master = "",
   appName = "SparkR",
   sparkHome = Sys.getenv("SPARK_HOME"),
   sparkEnvir = list(),
   sparkExecutorEnv = list(),
   sparkJars = "",
-  sparkRLibDir = "",
-  sparkRBackendPort = 12345) {
+  sparkRLibDir = "") {
 
   if (exists(".sparkRjsc", envir = .sparkREnv)) {
     cat("Re-using existing Spark Context. Please stop SparkR with sparkR.stop() or restart R to create a new Spark Context\n")
@@ -98,21 +94,75 @@ sparkR.init <- function(
   }
 
   sparkMem <- Sys.getenv("SPARK_MEM", "512m")
-  jars <- c(as.character(.sparkREnv$assemblyJarPath), as.character(sparkJars))
+  jars <- suppressWarnings(
+    normalizePath(c(as.character(.sparkREnv$assemblyJarPath), as.character(sparkJars))))
 
-  cp <- paste0(jars, collapse = ":")
+  # Classpath separator is ";" on Windows
+  # URI needs four /// as from http://stackoverflow.com/a/18522792
+  if (.Platform$OS.type == "unix") {
+    collapseChar <- ":"
+    uriSep <- "//"
+  } else {
+    collapseChar <- ";"
+    uriSep <- "////"
+  }
+  cp <- paste0(jars, collapse = collapseChar)
 
   yarn_conf_dir <- Sys.getenv("YARN_CONF_DIR", "")
   if (yarn_conf_dir != "") {
     cp <- paste(cp, yarn_conf_dir, sep = ":")
   }
-  launchBackend(classPath = cp,
-                mainClass = "edu.berkeley.cs.amplab.sparkr.SparkRBackend",
-                args = as.character(sparkRBackendPort),
-                javaOpts = paste("-Xmx", sparkMem, sep = ""))
-  Sys.sleep(2) # Wait for backend to come up
+
+  sparkRExistingPort <- Sys.getenv("EXISTING_SPARKR_BACKEND_PORT", "")
+  if (sparkRExistingPort != "") {
+    sparkRBackendPort <- sparkRExistingPort
+  } else {
+    path <- tempfile(pattern = "backend_port")
+    if (Sys.getenv("SPARKR_USE_SPARK_SUBMIT", "") == "") {
+      launchBackend(classPath = cp,
+                    mainClass = "edu.berkeley.cs.amplab.sparkr.SparkRBackend",
+                    args = path,
+                    javaOpts = paste("-Xmx", sparkMem, sep = ""))
+    } else {
+      # TODO: We should deprecate sparkJars and ask users to add it to the
+      # command line (using --jars) which is picked up by SparkSubmit
+      launchBackendSparkSubmit(
+          mainClass = "edu.berkeley.cs.amplab.sparkr.SparkRBackend",
+          args = path,
+          appJar = .sparkREnv$assemblyJarPath,
+          sparkHome = sparkHome,
+          sparkSubmitOpts = Sys.getenv("SPARKR_SUBMIT_ARGS", ""))
+    }
+    # wait atmost 100 seconds for JVM to launch 
+    wait <- 0.1
+    for (i in 1:25) {
+      Sys.sleep(wait)
+      if (file.exists(path)) {
+        break
+      }
+      wait <- wait * 1.25
+    }
+    if (!file.exists(path)) {
+      stop("JVM is not ready after 10 seconds")
+    }
+    f <- file(path, open='rb')
+    sparkRBackendPort <- readInt(f)
+    monitorPort <- readInt(f)
+    close(f)
+    file.remove(path)
+    if (length(sparkRBackendPort) == 0 || sparkRBackendPort == 0 ||
+        length(monitorPort) == 0 || monitorPort == 0) {
+      stop("JVM failed to launch")
+    }
+    assign(".monitorConn", socketConnection(port = monitorPort), envir = .sparkREnv)
+  }
+
   .sparkREnv$sparkRBackendPort <- sparkRBackendPort
-  connectBackend("localhost", sparkRBackendPort) # Connect to it
+  tryCatch({
+    connectBackend("localhost", sparkRBackendPort)
+  }, error = function(err) {
+    stop("Failed to connect JVM\n")
+  })
 
   if (nchar(sparkHome) != 0) {
     sparkHome <- normalizePath(sparkHome)
@@ -136,7 +186,11 @@ sparkR.init <- function(
   }
 
   nonEmptyJars <- Filter(function(x) { x != "" }, jars)
-  localJarPaths <- sapply(nonEmptyJars, function(j) { paste("file://", j, sep = "") })
+  localJarPaths <- sapply(nonEmptyJars, function(j) { utils::URLencode(paste("file:", uriSep, j, sep = "")) })
+
+  # Set the start time to identify jobjs
+  # Seconds resolution is good enough for this purpose, so use ints
+  assign(".scStartTime", as.integer(Sys.time()), envir = .sparkREnv)
 
   assign(
     ".sparkRjsc",
@@ -154,8 +208,8 @@ sparkR.init <- function(
 
   sc <- get(".sparkRjsc", envir = .sparkREnv)
 
-  # Register a finalizer to stop backend on R exit
-  reg.finalizer(.sparkREnv, sparkR.stop, onexit = TRUE)
+  # Register a finalizer to sleep 1 seconds on R exit to make RStudio happy
+  reg.finalizer(.sparkREnv, function(x) { Sys.sleep(1) }, onexit = TRUE)
 
   sc
 }

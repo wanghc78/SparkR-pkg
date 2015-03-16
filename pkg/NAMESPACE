@@ -2,9 +2,11 @@
 exportClasses("RDD")
 exportClasses("Broadcast")
 exportMethods(
+              "aggregateByKey",
               "aggregateRDD",
               "cache",
               "checkpoint",
+              "coalesce",
               "cogroup",
               "collect",
               "collectAsMap",
@@ -19,6 +21,7 @@ exportMethods(
               "flatMap",
               "flatMapValues",
               "fold",
+              "foldByKey",
               "foreach",
               "foreachPartition",
               "fullOuterJoin",
@@ -41,9 +44,11 @@ exportMethods(
               "numPartitions",
               "partitionBy",
               "persist",
+              "pipeRDD",
               "reduce",
               "reduceByKey",
               "reduceByKeyLocally",
+              "repartition",
               "rightOuterJoin",
               "sampleRDD",
               "saveAsTextFile",
@@ -57,7 +62,9 @@ exportMethods(
               "unionRDD",
               "unpersist",
               "value",
-              "values"
+              "values",
+              "zipWithIndex",
+              "zipWithUniqueId"
              )
 
 # S3 methods exported
